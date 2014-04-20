@@ -1,5 +1,5 @@
 require 'rubygems'
-gem 'resque-mongo'
+gem 'mongo-resque'
 require 'resque'
 require 'resque/server'
 require 'resque_scheduler/version'
@@ -10,18 +10,22 @@ require 'resque_scheduler/search_delayed'
 module ResqueScheduler
 
   def schedules
-    self.mongo ||= ENV['MONGO'] || 'localhost:27017'
-    @schedules ||= @db.collection('schedules')
+    #Resque.mongo
+    #self.mongo ||= ENV['MONGO'] || 'localhost:27017'
+    #@schedules ||= @db.collection('schedules')
+    @schedules ||= Resque.mongo.collection('schedules')
   end
 
   def schedules_changed
-    self.mongo ||= ENV['MONGO'] || 'localhost:27017'
-    @schedules_changed ||= @db.collection('schedules_changed')
+    #self.mongo ||= ENV['MONGO'] || 'localhost:27017'
+    #@schedules_changed ||= @db.collection('schedules_changed')
+    @schedules_changed ||= Resque.mongo.collection('schedules_changed')
   end
 
   def delayed_queue
-    self.mongo ||= ENV['MONGO'] || 'localhost:27017'
-    @delayed_queue ||= @db.collection('delayed_queue')
+    #self.mongo ||= ENV['MONGO'] || 'localhost:27017'
+    #@delayed_queue ||= @db.collection('delayed_queue')
+    @delayed_queue ||= Resque.mongo.collection('delayed_queue')
   end
 
   #
@@ -80,6 +84,7 @@ module ResqueScheduler
   def set_schedule(name, config)
     existing_config = get_schedule(name)
     unless existing_config && existing_config == config
+      # jlieb: I think this should be an upsert but we are removing all anyway
       schedules.insert(config.merge('_id' => name))
       schedules_changed.insert('_id' => name)
     end
@@ -91,6 +96,12 @@ module ResqueScheduler
     schedule = schedules.find_one('_id' => name)
     schedule.delete('_id') if schedule
     schedule
+  end
+
+  #not sure why they don't have this but the configs don't get updated properly
+  def remove_all_scheduled_jobs
+    schedules.remove({})
+    schedules_changed.remove({})
   end
   
   # remove a given schedule by name

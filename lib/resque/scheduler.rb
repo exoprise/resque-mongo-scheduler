@@ -87,7 +87,7 @@ module Resque
             if !config[interval_type].nil? && config[interval_type].length > 0
               begin
                 @@scheduled_jobs[name] = rufus_scheduler.send(interval_type, config[interval_type]) do
-                  log! "queueing #{config['class']} (#{name})"
+                  #log! "queueing #{config['class']} (#{name})"
                   enqueue_from_config(config)
                 end
               rescue Exception => e

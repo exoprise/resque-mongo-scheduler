@@ -2,3 +2,6 @@
 pkg
 nbproject
 *.gem
+.idea/*
+.idea/.*
+.idea

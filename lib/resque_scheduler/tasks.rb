@@ -6,7 +6,7 @@ namespace :resque do
 
   desc "Start Resque Scheduler"
   task :scheduler => :scheduler_setup do
-    gem 'resque-mongo'
+    gem 'mongo-resque'
     require 'resque'
     require 'resque_scheduler'
 
