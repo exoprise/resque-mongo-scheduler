@@ -152,7 +152,7 @@ module Resque
 
       # Enqueues a job based on a config hash
       def enqueue_from_config(config)
-        args = config['args'] || config[:args]
+        args = config['args'] || config[:args] || {}
         klass_name = config['class'] || config[:class]
         params = args.is_a?(Hash) ? [args] : Array(args)
         queue = config['queue'] || config[:queue] || Resque.queue_from_class(constantize(klass_name))
