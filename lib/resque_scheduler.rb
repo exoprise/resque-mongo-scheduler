@@ -196,7 +196,7 @@ module ResqueScheduler
       :query => {'_id' => timestamp.to_i},
       :update => {'$pop' => {'items' => -1}} # -1 means shift
     )
-    item = doc['items'].first
+    item = doc && doc['items'].first
     
     # If the list is empty, remove it.
     clean_up_timestamp(timestamp)
