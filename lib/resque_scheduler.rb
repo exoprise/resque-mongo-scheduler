@@ -85,36 +85,44 @@ module ResqueScheduler
     existing_config = get_schedule(name)
     unless existing_config && existing_config == config
       # jlieb: I think this should be an upsert but we are removing all anyway
-      schedules.insert(config.merge('_id' => name))
-      schedules_changed.insert('_id' => name)
+      #schedules.insert(config.merge('_id' => name))
+      schedules.insert_one(config.merge('_id' => name))
+      #schedules_changed.insert('_id' => name)
+      schedules_changed.insert_one('_id' => name)
     end
     config
   end
   
   # retrieve the schedule configuration for the given name
   def get_schedule(name)
-    schedule = schedules.find_one('_id' => name)
+    #schedule = schedules.find_one('_id' => name)
+    schedule = schedules.find({_id: name}, limit: 1).first
     schedule.delete('_id') if schedule
     schedule
   end
 
   #not sure why they don't have this but the configs don't get updated properly
   def remove_all_scheduled_jobs
-    schedules.remove({})
-    schedules_changed.remove({})
+    #schedules.remove({})
+    schedules.delete_many
+    #schedules_changed.remove({})
+    schedules_changed.delete_many
   end
   
   # remove a given schedule by name
   def remove_schedule(name)
-    schedules.remove('_id' => name)
-    schedules_changed.insert('_id' => name)
+    #schedules.remove('_id' => name)
+    schedules.delete_many({'_id' => name})
+    #schedules_changed.insert('_id' => name)
+    schedules_changed.insert_one({'_id' => name})
   end
 
   def pop_schedules_changed
-    while doc = schedules_changed.find_and_modify(:remove => true)
+    #while doc = schedules_changed.find_and_modify(:remove => true)
+    while doc = schedules_changed.find_one_and_delete
       yield doc['_id']
     end
-  rescue Mongo::OperationFailure
+  rescue Mongo::Error::OperationFailure
     # "Database command 'findandmodify' failed: {"errmsg"=>"No matching object found", "ok"=>0.0}"
     # Sadly, the mongo driver raises (with a global exception class) instead of returning nil when
     # the collection is empty.
@@ -143,11 +151,17 @@ module ResqueScheduler
   # @return the number of items for this timestamp
   def delayed_push(timestamp, item)
     # Add this item to the list for this timestamp
-    doc = delayed_queue.find_and_modify(
-      :query => {'_id' => timestamp.to_i},
-      :update => {'$push' => {:items => item}},
+    # doc = delayed_queue.find_and_modify(
+    #   :query => {'_id' => timestamp.to_i},
+    #   :update => {'$push' => {:items => item}},
+    #   :upsert => true,
+    #   :new => true
+    # )
+    doc = delayed_queue.find_one_and_update(
+      {'_id' => timestamp.to_i},
+      {'$push' => {:items => item}},
       :upsert => true,
-      :new => true
+      :return_document => :after
     )
     doc['items'].size
   end
@@ -164,26 +178,37 @@ module ResqueScheduler
 
   # Returns the number of jobs for a given timestamp in the delayed queue schedule
   def delayed_timestamp_size(timestamp)
-    document = delayed_queue.find_one('_id' => timestamp.to_i)
+    #document = delayed_queue.find_one('_id' => timestamp.to_i)
+    document = delayed_queue.find_one({_id: timestamp.to_i}, limit: 1).first
     document ? (document['items'] || []).size : 0
   end
 
   # Returns an array of delayed items for the given timestamp
   def delayed_timestamp_peek(timestamp, start, count)
-    doc = delayed_queue.find_one(
+    # doc = delayed_queue.find_one(
+    #   {'_id' => timestamp.to_i},
+    #   :fields => {'items' => {'$slice' => [start, count]}}
+    # )
+    doc = delayed_queue.find(
       {'_id' => timestamp.to_i},
-      :fields => {'items' => {'$slice' => [start, count]}}
-    )
+      :fields => {'items' => {'$slice' => [start, count]}},
+      limit: 1
+    ).first
     doc ? doc['items'] || [] : []
   end
 
   # Returns the next delayed queue timestamp
   # (don't call directly)
   def next_delayed_timestamp(at_time=nil)
-    doc = delayed_queue.find_one(
-      {'_id' => {'$lte' => (at_time || Time.now).to_i}},
-      :sort => ['_id', Mongo::ASCENDING]
-    )
+    # doc = delayed_queue.find_one(
+    #   {'_id' => {'$lte' => (at_time || Time.now).to_i}},
+    #   :sort => ['_id', Mongo::ASCENDING]
+    # )
+    doc = delayed_queue.find(
+      {_id: {'$lte' => (at_time || Time.now).to_i}},
+      sort: {_id: 1},
+      limit: 1
+    ).first
     doc ? doc['_id'] : nil
   end
 
@@ -192,9 +217,13 @@ module ResqueScheduler
   # +timestamp+ can either be in seconds or a datetime
   def next_item_for_timestamp(timestamp)
     # Returns the array of items before it was shifted
-    doc = delayed_queue.find_and_modify(
-      :query => {'_id' => timestamp.to_i},
-      :update => {'$pop' => {'items' => -1}} # -1 means shift
+    # doc = delayed_queue.find_and_modify(
+    #   :query => {'_id' => timestamp.to_i},
+    #   :update => {'$pop' => {'items' => -1}} # -1 means shift
+    # )
+    doc = delayed_queue.find_one_and_update(
+      {'_id' => timestamp.to_i},
+      {'$pop' => {'items' => -1}} # -1 means shift
     )
     item = doc && doc['items'].first
     
@@ -202,14 +231,15 @@ module ResqueScheduler
     clean_up_timestamp(timestamp)
     
     item
-  rescue Mongo::OperationFailure
+  rescue Mongo::Error::OperationFailure
     # Database command 'findandmodify' failed: {"errmsg"=>"No matching object found", "ok"=>0.0}
     nil
   end
 
   # Clears all jobs created with enqueue_at or enqueue_in
   def reset_delayed_queue
-    delayed_queue.remove
+    #delayed_queue.remove
+    delayed_queue.delete_many
   end
 
   # given an encoded item, remove it from the delayed_queue
@@ -217,10 +247,14 @@ module ResqueScheduler
   # TODO ? unlike resque-scheduler, it does not return the number of removed items,
   # can't use find_and_modify because it only updates one item.
   def remove_delayed(klass, *args)
-    delayed_queue.update(
+    # delayed_queue.update(
+    #   {},
+    #   {'$pull' => {'items' => job_to_hash(klass, args)}},
+    #   :multi => true
+    # )
+    delayed_queue.update_many(
       {},
       {'$pull' => {'items' => job_to_hash(klass, args)}},
-      :multi => true
     )
   end
 
@@ -238,7 +272,8 @@ module ResqueScheduler
     end
 
     def clean_up_timestamp(timestamp)
-      delayed_queue.remove('_id' => timestamp.to_i, :items => {'$size' => 0})
+      #delayed_queue.remove('_id' => timestamp.to_i, :items => {'$size' => 0})
+      delayed_queue.delete_many('_id' => timestamp.to_i, :items => {'$size' => 0})
     end
 
 end

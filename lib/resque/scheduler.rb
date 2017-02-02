@@ -69,7 +69,8 @@ module Resque
         Resque.schedule.each do |name, config|
           load_schedule_job(name, config)
         end
-        Resque.schedules_changed.remove
+        #Resque.schedules_changed.remove
+        Resque.schedules_changed.delete_many
         procline "Schedules Loaded"
       end
       
