@@ -179,7 +179,7 @@ module ResqueScheduler
   # Returns the number of jobs for a given timestamp in the delayed queue schedule
   def delayed_timestamp_size(timestamp)
     #document = delayed_queue.find_one('_id' => timestamp.to_i)
-    document = delayed_queue.find_one({_id: timestamp.to_i}, limit: 1).first
+    document = delayed_queue.find({_id: timestamp.to_i}, limit: 1).first
     document ? (document['items'] || []).size : 0
   end
 
